@@ -63,6 +63,16 @@
       "key": "crawl4ai_page",
       "kind": "source",
       "output": "records+receipt"
+    },
+    {
+      "key": "ashby_jobs",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "duckdb_batch",
+      "kind": "transform",
+      "output": "records+receipt"
     }
   ],
   "security": {
@@ -84,5 +94,11 @@
     ],
     "inference": false,
     "verification": false
+  },
+  "libraries": {
+    "duckdb": "1.5.6",
+    "wappalyzergo": "0.3.1",
+    "crawl4ai": "0.9.3",
+    "jobspy": "1.2.0"
   }
 }
