@@ -1,0 +1,41 @@
+name: Run data worker
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        required: true
+        type: choice
+        options: [overture_places, gdelt_events, overpass_places, greenhouse_jobs, lever_jobs]
+      config_json:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install source dependency
+        if: inputs.source == 'overture_places'
+        run: pip install --disable-pip-version-check overturemaps
+      - name: Write public config
+        env:
+          CONFIG_JSON: ${{ inputs.config_json }}
+        run: |
+          python3 - <<'PY'
+          import json,os,pathlib
+          raw=os.environ["CONFIG_JSON"]
+          if len(raw)>20000: raise SystemExit("config_json too large")
+          pathlib.Path("job.json").write_text(json.dumps(json.loads(raw)),encoding="utf-8")
+          PY
+      - run: python3 worker.py --source "${{ inputs.source }}" --config job.json --out out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-data-worker-output
+          path: out/
+          retention-days: 3
