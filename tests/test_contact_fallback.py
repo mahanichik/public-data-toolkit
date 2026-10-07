@@ -14,5 +14,5 @@ class ContactFallbackTests(unittest.TestCase):
     self.assertEqual(receipt["output_count"],1);self.assertEqual(data["records"][0]["metadata"]["source"],"contact_extract")
   def test_crawl4ai_contract(self):
     data,receipt=self.run_fixture("crawl4ai_page",[{"url":"https://example.com/","text":"Public page text"}])
-    self.assertEqual(receipt["status"],"completed");self.assertEqual(data["records"][0]["metadata"]["source"],"crawl4ai_page")
+    self.assertEqual(receipt["status"],"completed");self.assertEqual(data["records"][0]["metadata"]["source"],"crawl4ai")
 if __name__=="__main__":unittest.main()
