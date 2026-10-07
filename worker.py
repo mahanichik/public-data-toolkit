@@ -165,6 +165,27 @@ def greenhouse(cfg):
             if len(records)>=max_records:return records,filtered,{"boards":boards}
     return records,filtered,{"boards":boards}
 
+def ashby(cfg):
+    boards=[clean(x,150) for x in (cfg.get("board_names") or []) if clean(x,150)]
+    if not boards:raise ValueError("board_names is required")
+    if len(boards)>20:raise ValueError("At most 20 Ashby boards are allowed")
+    max_records=max(1,min(20000,int(cfg.get("max_records") or 5000)))
+    fixtures=load_fixture(cfg);records=[];filtered=0
+    for board in boards:
+        doc=(fixtures or {}).get(board) if isinstance(fixtures,dict) else None
+        if doc is None:
+            url="https://api.ashbyhq.com/posting-api/job-board/"+urllib.parse.quote(board)+"?includeCompensation=false"
+            doc=http_json(url,45,5_000_000)
+        for j in (doc.get("jobs") or []):
+            if not isinstance(j,dict):continue
+            if j.get("isListed") is False:filtered+=1;continue
+            title=clean(j.get("title"),300);url=clean(j.get("jobUrl"),1200)
+            if not title or not url:filtered+=1;continue
+            loc=clean(j.get("location"),240);team=clean(j.get("team"),200);department=clean(j.get("department"),200)
+            records.append({"id":rid("ashby",board,url,title),"text":f"{title}. Location: {loc}. Team: {team}. Department: {department}. Public job posting for {board}.","observed_at":clean(j.get("publishedAt"),80) or None,"metadata":{"source":"ashby","board":board,"title":title,"location":loc,"team":team,"department":department,"url":url,"apply_url":clean(j.get("applyUrl"),1200),"workplace_type":clean(j.get("workplaceType"),120)}})
+            if len(records)>=max_records:return records,filtered,{"boards":boards}
+    return records,filtered,{"boards":boards}
+
 def lever(cfg):
     sites=[clean(x,150) for x in (cfg.get("sites") or []) if clean(x,150)]
     max_records=max(1,min(20000,int(cfg.get("max_records") or 5000)))
@@ -181,7 +202,7 @@ def lever(cfg):
             if len(records)>=max_records:return records,filtered,{"sites":sites}
     return records,filtered,{"sites":sites}
 
-SOURCES={"overture_places":overture,"gdelt_events":gdelt,"overpass_places":overpass,"greenhouse_jobs":greenhouse,"lever_jobs":lever}
+SOURCES={"overture_places":overture,"gdelt_events":gdelt,"overpass_places":overpass,"greenhouse_jobs":greenhouse,"lever_jobs":lever,"ashby_jobs":ashby}
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--source",required=True,choices=sorted(SOURCES));ap.add_argument("--config",required=True);ap.add_argument("--out",default="out")
