@@ -25,4 +25,13 @@ class AdvancedWorkerTests(unittest.TestCase):
     self.assertEqual(len(data["records"]),1)
     self.assertEqual(receipt["duplicate_count"],1)
 
+  def test_duckdb_batch(self):
+    with tempfile.TemporaryDirectory() as td:
+      d=pathlib.Path(td);cp=d/"config.json";out=d/"out"
+      cp.write_text(json.dumps({"records":[{"id":"a","kind":"hotel","score":3,"text":"A"},{"id":"b","kind":"hotel","score":9,"text":"B"},{"id":"c","kind":"cafe","score":5,"text":"C"}],"filter_field":"kind","filter_equals":"hotel","order_by":"score","order_direction":"desc","limit":10}),encoding="utf-8")
+      subprocess.run([sys.executable,str(WORKER),"--source","duckdb_batch","--config",str(cp),"--out",str(out)],check=True)
+      data=json.loads((out/"records.json").read_text());receipt=json.loads((out/"receipt.json").read_text())
+      self.assertEqual([x["id"] for x in data["records"]],["b","a"])
+      self.assertEqual(receipt["output_count"],2);self.assertEqual(receipt["rejected_count"],1)
+
 if __name__=="__main__":unittest.main()
