@@ -1,1 +1,1 @@
-migration-smoke-v1
+migration-smoke-v2
