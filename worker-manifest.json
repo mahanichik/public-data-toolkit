@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "worker_group": "public-data-workers",
+  "compute_class": "github_public",
+  "contract": "CONTRACT.md",
+  "capabilities": [
+    {
+      "key": "overture_places",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "gdelt_events",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "overpass_places",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "greenhouse_jobs",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "lever_jobs",
+      "kind": "source",
+      "output": "records+receipt"
+    }
+  ],
+  "security": {
+    "public_data_only": true,
+    "credentials": false,
+    "private_records": false
+  }
+}
