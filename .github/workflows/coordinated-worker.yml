@@ -37,6 +37,7 @@ jobs:
             scrapling_page) pip install --disable-pip-version-check 'scrapling[fetchers]' ;;
             jobspy_jobs) pip install --disable-pip-version-check python-jobspy==1.2.0 ;;
             crawl4ai_page) pip install --disable-pip-version-check crawl4ai==0.9.3 && crawl4ai-setup ;;
+            duckdb_batch) pip install --disable-pip-version-check duckdb==1.5.6 ;;
             tech_detect) (cd techdetect && go mod download) ;;
           esac
       - name: Run claimed task
@@ -49,7 +50,7 @@ jobs:
           pathlib.Path("job.json").write_text(json.dumps(payload.get("config") or payload))
           PY
           case "${{ steps.claim.outputs.task }}" in
-            crawlee_site|scrapling_page|jobspy_jobs|searxng_search|tech_detect|contact_extract|crawl4ai_page)
+            crawlee_site|scrapling_page|jobspy_jobs|searxng_search|tech_detect|contact_extract|crawl4ai_page|duckdb_batch)
               python3 advanced_worker.py --source "${{ steps.claim.outputs.task }}" --config job.json --out out ;;
             *)
               python3 worker.py --source "${{ steps.claim.outputs.task }}" --config job.json --out out ;;
