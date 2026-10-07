@@ -32,4 +32,10 @@ class WorkerTests(unittest.TestCase):
     r1,_=self.run_worker("greenhouse_jobs",{"board_tokens":["acme"]},gh);r2,_=self.run_worker("lever_jobs",{"sites":["acme"]},lr)
     self.assertEqual(r1["records"][0]["metadata"]["title"],"Marketing Manager");self.assertEqual(r2["records"][0]["metadata"]["team"],"Marketing")
 
+  def test_ashby(self):
+    fixture={"acme":{"jobs":[{"title":"Demand Gen Lead","location":"Remote","department":"Marketing","team":"Growth","isListed":True,"publishedAt":"2026-10-07T00:00:00Z","jobUrl":"https://jobs.example/demand","applyUrl":"https://jobs.example/apply","workplaceType":"Remote"},{"title":"Hidden","isListed":False,"jobUrl":"https://jobs.example/hidden"}]}}
+    records,receipt=self.run_worker("ashby_jobs",{"board_names":["acme"]},fixture)
+    self.assertEqual(receipt["output_count"],1);self.assertEqual(receipt["rejected_count"],1)
+    self.assertEqual(records["records"][0]["metadata"]["source"],"ashby")
+
 if __name__=="__main__":unittest.main()
