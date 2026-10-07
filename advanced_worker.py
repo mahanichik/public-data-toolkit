@@ -153,7 +153,8 @@ def tech_detect(cfg):
     if not urls:raise ValueError("urls is required")
     records=[]
     for url in urls[:50]:
-        proc=subprocess.run(["go","run","./techdetect","--url",url],capture_output=True,text=True,timeout=90,check=True)
+        techdir=pathlib.Path(__file__).resolve().parent/"techdetect"
+        proc=subprocess.run(["go","run",".","--url",url],cwd=techdir,capture_output=True,text=True,timeout=90,check=True)
         data=json.loads(proc.stdout)
         tech=data.get("technologies") or []
         records.append({"id":rid("tech",url),"text":f"Technology fingerprint for {url}: {', '.join(tech[:100])}.","observed_at":now(),"metadata":{"source":"wappalyzergo","url":url,"technologies":tech[:200]}})
