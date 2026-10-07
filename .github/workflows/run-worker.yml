@@ -24,7 +24,7 @@ jobs:
         if: inputs.source == 'tech_detect'
         with:
           go-version: '1.24.x'
-          cache-dependency-path: techdetect/go.sum
+          cache: false
       - name: Install source dependency
         run: |
           case "${{ inputs.source }}" in
