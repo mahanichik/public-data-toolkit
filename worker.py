@@ -122,8 +122,21 @@ def overpass(cfg):
             parts += [f'nwr["{k}"="{v}"]({south},{west},{north},{east});']
         query="[out:json][timeout:60];("+ "".join(parts) +");out center tags;"
         data=urllib.parse.urlencode({"data":query}).encode()
-        req=urllib.request.Request("https://overpass-api.de/api/interpreter",data=data,headers={"User-Agent":UA,"Accept":"application/json"})
-        with urllib.request.urlopen(req,timeout=90) as r:doc=json.loads(r.read(10_000_000).decode("utf-8","replace"))
+        endpoints=[
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter"
+        ]
+        last=None
+        for endpoint in endpoints:
+            try:
+                req=urllib.request.Request(endpoint,data=data,headers={"User-Agent":UA,"Accept":"application/json"})
+                with urllib.request.urlopen(req,timeout=90) as r:
+                    doc=json.loads(r.read(10_000_000).decode("utf-8","replace"))
+                break
+            except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError) as e:
+                last=e
+        else:
+            raise last if last else RuntimeError("Overpass request failed")
     records=[];filtered=0
     for e in doc.get("elements") or []:
         tagsd=e.get("tags") or {};name=clean(tagsd.get("name"),240)
