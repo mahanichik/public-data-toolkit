@@ -1,0 +1,53 @@
+name: Advanced public data smoke
+on:
+  push:
+    paths:
+      - advanced-smoke-trigger.txt
+permissions:
+  contents: read
+jobs:
+  crawl-and-tech:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+          cache: false
+      - name: Install public worker dependencies
+        run: pip install --disable-pip-version-check 'crawlee[beautifulsoup]' 'scrapling[fetchers]'
+      - name: Prepare Go dependency
+        run: (cd techdetect && go mod download)
+      - name: Crawlee robots-aware smoke
+        run: |
+          cat > crawl.json <<'JSON'
+          {"urls":["https://example.com/"],"max_pages":1}
+          JSON
+          python3 advanced_worker.py --source crawlee_site --config crawl.json --out out-crawl
+          cat out-crawl/receipt.json
+      - name: Scrapling plain-fetch smoke
+        run: |
+          cat > scrapling.json <<'JSON'
+          {"urls":["https://example.com/"],"max_urls":1}
+          JSON
+          python3 advanced_worker.py --source scrapling_page --config scrapling.json --out out-scrapling
+          cat out-scrapling/receipt.json
+      - name: Technology detector smoke
+        run: |
+          cat > tech.json <<'JSON'
+          {"urls":["https://example.com/"]}
+          JSON
+          python3 advanced_worker.py --source tech_detect --config tech.json --out out-tech
+          cat out-tech/receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: advanced-data-smoke
+          path: |
+            out-crawl/
+            out-scrapling/
+            out-tech/
+          retention-days: 3
