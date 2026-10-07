@@ -5,7 +5,7 @@ on:
       source:
         required: true
         type: choice
-        options: [overture_places, gdelt_events, overpass_places, greenhouse_jobs, lever_jobs, crawlee_site, scrapling_page, jobspy_jobs, searxng_search, tech_detect, contact_extract, crawl4ai_page]
+        options: [overture_places, gdelt_events, overpass_places, greenhouse_jobs, lever_jobs, ashby_jobs, crawlee_site, scrapling_page, jobspy_jobs, searxng_search, tech_detect, contact_extract, crawl4ai_page, duckdb_batch]
       config_json:
         required: true
         type: string
@@ -33,6 +33,7 @@ jobs:
             scrapling_page) pip install --disable-pip-version-check 'scrapling[fetchers]' ;;
             jobspy_jobs) pip install --disable-pip-version-check python-jobspy==1.2.0 ;;
             crawl4ai_page) pip install --disable-pip-version-check crawl4ai==0.9.3 && crawl4ai-setup ;;
+            duckdb_batch) pip install --disable-pip-version-check duckdb==1.5.6 ;;
             tech_detect) (cd techdetect && go mod download) ;;
           esac
       - name: Write public config
@@ -48,7 +49,7 @@ jobs:
       - name: Run worker
         run: |
           case "${{ inputs.source }}" in
-            crawlee_site|scrapling_page|jobspy_jobs|searxng_search|tech_detect|contact_extract|crawl4ai_page)
+            crawlee_site|scrapling_page|jobspy_jobs|searxng_search|tech_detect|contact_extract|crawl4ai_page|duckdb_batch)
               python3 advanced_worker.py --source "${{ inputs.source }}" --config job.json --out out ;;
             *)
               python3 worker.py --source "${{ inputs.source }}" --config job.json --out out ;;
