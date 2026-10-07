@@ -8,6 +8,7 @@ Implemented sources:
 - `overpass_places`
 - `greenhouse_jobs`
 - `lever_jobs`
+- `ashby_jobs` — direct public Ashby job-board feed
 - `crawlee_site` — robots-aware same-hostname HTTP crawling
 - `scrapling_page` — plain public-page extraction; no stealth/access-control bypass
 - `jobspy_jobs` — fallback multi-board job discovery
@@ -55,3 +56,8 @@ Network tasks accept only public HTTP(S) targets. Crawlee respects robots.txt an
 
 - `contact_extract` extracts only public email/phone evidence visible on allowed pages and labels it `DISCOVERED`; it does not guess or verify mailbox ownership.
 - `crawl4ai_page` is a static fallback using Crawl4AI 0.9.3 with robots checks enabled, JavaScript disabled, no persistent session, and public-network target validation.
+
+
+## Deterministic bulk transform
+
+- `duckdb_batch` provides bounded filter/sort/distinct/limit operations over up to 10,000 public records using DuckDB. It never accepts caller-supplied SQL.
