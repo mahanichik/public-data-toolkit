@@ -1,0 +1,53 @@
+name: Real public data smoke
+on:
+  push:
+    paths:
+      - smoke-trigger.txt
+permissions:
+  contents: read
+jobs:
+  overpass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run live Overpass collector
+        run: |
+          cat > smoke.json <<'JSON'
+          {"bbox":[51.50,-0.14,51.52,-0.10],"tags":["tourism=hotel","amenity=restaurant"],"max_records":20}
+          JSON
+          python3 worker.py --source overpass_places --config smoke.json --out out
+          echo "=== RECEIPT ==="
+          cat out/receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: live-overpass-smoke
+          path: out/
+          retention-days: 3
+
+  overture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Overture client
+        run: pip install --disable-pip-version-check overturemaps
+      - name: Run live Overture collector
+        run: |
+          cat > smoke-overture.json <<'JSON'
+          {"bbox":[-0.14,51.50,-0.10,51.52],"max_records":50}
+          JSON
+          python3 worker.py --source overture_places --config smoke-overture.json --out out-overture
+          echo "=== OVERTURE RECEIPT ==="
+          cat out-overture/receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: live-overture-smoke
+          path: out-overture/
+          retention-days: 3
