@@ -29,7 +29,11 @@ def call(url,body,timeout=45):
 
 def claim(out:pathlib.Path):
     url=os.environ.get("COORDINATOR_URL","").strip()
-    if not url: raise RuntimeError("COORDINATOR_URL is not configured")
+    if not url:
+        print("claimed=false")
+        print("configured=false")
+        return
+    print("configured=true")
     status,data=call(url,{})
     if status==204 or not data.get("job"):
         print("claimed=false");return
