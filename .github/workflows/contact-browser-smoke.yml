@@ -1,0 +1,44 @@
+name: Contact and browser fallback smoke
+on:
+  push:
+    paths:
+      - contact-browser-trigger.txt
+permissions:
+  contents: read
+jobs:
+  fallback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Crawl4AI
+        run: |
+          pip install --disable-pip-version-check crawl4ai==0.9.3
+          crawl4ai-setup
+      - name: Live static Crawl4AI smoke
+        run: |
+          cat > crawl4ai.json <<'JSON'
+          {"urls":["https://example.com/"],"max_urls":1}
+          JSON
+          python3 advanced_worker.py --source crawl4ai_page --config crawl4ai.json --out out-crawl4ai
+          cat out-crawl4ai/receipt.json
+      - name: Contact extraction contract smoke
+        run: |
+          cat > fixture.json <<'JSON'
+          {"records":[{"id":"contact-1","text":"Public email evidence: hello@example.test","state":"DISCOVERED","evidence_url":"https://example.com/"}]}
+          JSON
+          cat > contact.json <<'JSON'
+          {"fixture_path":"fixture.json"}
+          JSON
+          python3 advanced_worker.py --source contact_extract --config contact.json --out out-contact
+          cat out-contact/receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contact-browser-smoke
+          path: |
+            out-crawl4ai/
+            out-contact/
+          retention-days: 3
