@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, asyncio, hashlib, html.parser, ipaddress, json, pathlib, re, socket, subprocess, urllib.error, urllib.parse, urllib.request, urllib.robotparser
+import argparse, asyncio, hashlib, html.parser, ipaddress, json, pathlib, re, socket, subprocess, tempfile, urllib.error, urllib.parse, urllib.request, urllib.robotparser
 from datetime import datetime, timezone
 from typing import Any
 
 UA="PublicDataToolkit/1"
-SOURCES={"crawlee_site","scrapling_page","jobspy_jobs","searxng_search","tech_detect","contact_extract","crawl4ai_page"}
+SOURCES={"crawlee_site","scrapling_page","jobspy_jobs","searxng_search","tech_detect","contact_extract","crawl4ai_page","duckdb_batch"}
 
 def clean(v:Any,limit:int=6000)->str:
     return " ".join(str(v or "").split())[:limit]
@@ -240,6 +240,50 @@ def searxng_search(cfg):
         records.append({"id":rid("searxng",target),"text":f"{title}. {content}","observed_at":None,"metadata":{"source":"searxng","url":target,"title":title,"engine":clean(row.get("engine"),100),"score":row.get("score")}})
     return records,0,{"query":query,"returned":len(records)}
 
+
+def duckdb_batch(cfg):
+    import duckdb
+    doc=fixture(cfg)
+    rows=(doc.get("records") if isinstance(doc,dict) else doc) if doc is not None else cfg.get("records")
+    if not isinstance(rows,list) or len(rows)>10000 or any(not isinstance(x,dict) for x in rows):
+        raise ValueError("records must be a list of at most 10000 objects")
+    if not rows:return [],0,{"engine":"duckdb","input":0}
+    def ident(v):
+        s=clean(v,80)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*",s):raise ValueError("Invalid DuckDB field")
+        return '"'+s+'"'
+    filter_field=cfg.get("filter_field");order_by=cfg.get("order_by");distinct_field=cfg.get("distinct_field")
+    direction=str(cfg.get("order_direction") or "asc").lower()
+    if direction not in {"asc","desc"}:raise ValueError("order_direction must be asc or desc")
+    limit=max(1,min(10000,int(cfg.get("limit") or len(rows))))
+    with tempfile.TemporaryDirectory() as td:
+        path=pathlib.Path(td)/"input.ndjson"
+        path.write_text("\n".join(json.dumps(x,ensure_ascii=False,default=str) for x in rows)+"\n",encoding="utf-8")
+        con=duckdb.connect(database=":memory:")
+        con.execute("CREATE TABLE input AS SELECT * FROM read_json_auto(?)",[str(path)])
+        query="SELECT * FROM input";params=[]
+        if filter_field:
+            query+=" WHERE "+ident(filter_field)+" = ?";params.append(cfg.get("filter_equals"))
+        if order_by:query+=" ORDER BY "+ident(order_by)+" "+direction.upper()
+        query+=" LIMIT ?";params.append(limit)
+        cur=con.execute(query,params);names=[d[0] for d in cur.description];selected=[dict(zip(names,row)) for row in cur.fetchall()]
+        con.close()
+    if distinct_field:
+        key=clean(distinct_field,80)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*",key):raise ValueError("Invalid distinct field")
+        seen=set();unique=[]
+        for row in selected:
+            marker=json.dumps(row.get(key),sort_keys=True,default=str)
+            if marker in seen:continue
+            seen.add(marker);unique.append(row)
+        selected=unique
+    records=[]
+    for i,row in enumerate(selected):
+        item_id=clean(row.get("id"),200) or rid("duckdb",i,json.dumps(row,sort_keys=True,default=str))
+        text=clean(row.get("text") or row.get("title") or row.get("name") or item_id,6000)
+        records.append({"id":item_id,"text":text,"observed_at":row.get("observed_at"),"metadata":{"source":"duckdb_batch","row":row}})
+    return records,max(0,len(rows)-len(records)),{"engine":"duckdb","input":len(rows),"output":len(records),"filter_field":filter_field,"order_by":order_by,"distinct_field":distinct_field}
+
 def tech_detect(cfg):
     doc=fixture(cfg)
     if doc is not None:return from_fixture("tech_detect",cfg,doc)
@@ -248,13 +292,15 @@ def tech_detect(cfg):
     records=[]
     for url in urls[:50]:
         techdir=pathlib.Path(__file__).resolve().parent/"techdetect"
-        proc=subprocess.run(["go","run",".","--url",url],cwd=techdir,capture_output=True,text=True,timeout=90,check=True)
+        proc=subprocess.run(["go","run",".","--url",url],cwd=techdir,capture_output=True,text=True,timeout=90)
+        if proc.returncode!=0:
+            raise RuntimeError("tech detector failed: "+clean(proc.stderr,1200))
         data=json.loads(proc.stdout)
         tech=data.get("technologies") or []
         records.append({"id":rid("tech",url),"text":f"Technology fingerprint for {url}: {', '.join(tech[:100])}.","observed_at":now(),"metadata":{"source":"wappalyzergo","url":url,"technologies":tech[:200]}})
     return records,0,{"requested":min(len(urls),50),"engine":"wappalyzergo"}
 
-HANDLERS={"crawlee_site":crawlee_site,"scrapling_page":scrapling_page,"jobspy_jobs":jobspy_jobs,"searxng_search":searxng_search,"tech_detect":tech_detect,"contact_extract":contact_extract,"crawl4ai_page":crawl4ai_page}
+HANDLERS={"crawlee_site":crawlee_site,"scrapling_page":scrapling_page,"jobspy_jobs":jobspy_jobs,"searxng_search":searxng_search,"tech_detect":tech_detect,"contact_extract":contact_extract,"crawl4ai_page":crawl4ai_page,"duckdb_batch":duckdb_batch}
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--source",required=True,choices=sorted(SOURCES));ap.add_argument("--config",required=True);ap.add_argument("--out",default="out")
