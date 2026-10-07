@@ -5,7 +5,7 @@ on:
       source:
         required: true
         type: choice
-        options: [overture_places, gdelt_events, overpass_places, greenhouse_jobs, lever_jobs]
+        options: [overture_places, gdelt_events, overpass_places, greenhouse_jobs, lever_jobs, crawlee_site, scrapling_page, jobspy_jobs, searxng_search, tech_detect]
       config_json:
         required: true
         type: string
@@ -20,9 +20,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-go@v6
+        if: inputs.source == 'tech_detect'
+        with:
+          go-version: '1.24.x'
+          cache-dependency-path: techdetect/go.sum
       - name: Install source dependency
-        if: inputs.source == 'overture_places'
-        run: pip install --disable-pip-version-check overturemaps
+        run: |
+          case "${{ inputs.source }}" in
+            overture_places) pip install --disable-pip-version-check overturemaps ;;
+            crawlee_site) pip install --disable-pip-version-check 'crawlee[beautifulsoup]' ;;
+            scrapling_page) pip install --disable-pip-version-check 'scrapling[fetchers]' ;;
+            jobspy_jobs) pip install --disable-pip-version-check python-jobspy==1.2.0 ;;
+            tech_detect) (cd techdetect && go mod download) ;;
+          esac
       - name: Write public config
         env:
           CONFIG_JSON: ${{ inputs.config_json }}
@@ -33,7 +44,14 @@ jobs:
           if len(raw)>20000: raise SystemExit("config_json too large")
           pathlib.Path("job.json").write_text(json.dumps(json.loads(raw)),encoding="utf-8")
           PY
-      - run: python3 worker.py --source "${{ inputs.source }}" --config job.json --out out
+      - name: Run worker
+        run: |
+          case "${{ inputs.source }}" in
+            crawlee_site|scrapling_page|jobspy_jobs|searxng_search|tech_detect)
+              python3 advanced_worker.py --source "${{ inputs.source }}" --config job.json --out out ;;
+            *)
+              python3 worker.py --source "${{ inputs.source }}" --config job.json --out out ;;
+          esac
       - uses: actions/upload-artifact@v4
         with:
           name: public-data-worker-output

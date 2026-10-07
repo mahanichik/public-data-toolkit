@@ -17,9 +17,9 @@ class WorkerTests(unittest.TestCase):
     self.assertEqual(len(records["records"]),1);self.assertEqual(receipt["output_count"],1);self.assertEqual(receipt["rejected_count"],1)
 
   def test_gdelt(self):
-    doc={"articles":[{"url":"https://e/x","title":"Company opens branch","domain":"e","sourcecountry":"Armenia","seendate":"20261007T120000Z"}]}
+    doc={"articles":[{"url":"https://e/x","title":"Company opens branch","domain":"e","sourcecountry":"Exampleland","seendate":"20261007T120000Z"}]}
     records,receipt=self.run_worker("gdelt_events",{"query":"opening","max_records":10},doc)
-    self.assertEqual(records["records"][0]["metadata"]["source_country"],"Armenia");self.assertEqual(receipt["output_count"],1)
+    self.assertEqual(records["records"][0]["metadata"]["source_country"],"Exampleland");self.assertEqual(receipt["output_count"],1)
 
   def test_overpass(self):
     doc={"elements":[{"type":"node","id":1,"lat":40.1,"lon":44.5,"tags":{"name":"Hotel B","tourism":"hotel","email":"info@b.example"}}]}

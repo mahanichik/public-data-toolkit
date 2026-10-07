@@ -28,11 +28,42 @@
       "key": "lever_jobs",
       "kind": "source",
       "output": "records+receipt"
+    },
+    {
+      "key": "crawlee_site",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "scrapling_page",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "jobspy_jobs",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "searxng_search",
+      "kind": "source",
+      "output": "records+receipt"
+    },
+    {
+      "key": "tech_detect",
+      "kind": "source",
+      "output": "records+receipt"
     }
   ],
   "security": {
     "public_data_only": true,
     "credentials": false,
     "private_records": false
+  },
+  "safety": {
+    "public_targets_only": true,
+    "robots_txt_for_crawlee": true,
+    "anti_bot_bypass": false,
+    "private_network_targets": false
   }
 }

@@ -8,6 +8,11 @@ Implemented sources:
 - `overpass_places`
 - `greenhouse_jobs`
 - `lever_jobs`
+- `crawlee_site` — robots-aware same-hostname HTTP crawling
+- `scrapling_page` — plain public-page extraction; no stealth/access-control bypass
+- `jobspy_jobs` — fallback multi-board job discovery
+- `searxng_search` — client for a configured public SearXNG endpoint
+- `tech_detect` — WappalyzerGo technology fingerprinting
 
 Each run emits:
 - `out/records.json`
@@ -39,3 +44,8 @@ Examples:
 ```json
 {"query":"business opening OR hiring","timespan":"7d","max_records":250}
 ```
+
+
+## Safety
+
+Network tasks accept only public HTTP(S) targets. Crawlee respects robots.txt and automatic blocked-request bypass is disabled. The Scrapling adapter uses the plain fetcher only; no CAPTCHA, Turnstile, login, or access-control bypass is implemented.
