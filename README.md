@@ -49,3 +49,9 @@ Examples:
 ## Safety
 
 Network tasks accept only public HTTP(S) targets. Crawlee respects robots.txt and automatic blocked-request bypass is disabled. The Scrapling adapter uses the plain fetcher only; no CAPTCHA, Turnstile, login, or access-control bypass is implemented.
+
+
+## Contact evidence and browser fallback
+
+- `contact_extract` extracts only public email/phone evidence visible on allowed pages and labels it `DISCOVERED`; it does not guess or verify mailbox ownership.
+- `crawl4ai_page` is a static fallback using Crawl4AI 0.9.3 with robots checks enabled, JavaScript disabled, no persistent session, and public-network target validation.

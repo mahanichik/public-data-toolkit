@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, asyncio, hashlib, ipaddress, json, pathlib, socket, subprocess, urllib.parse, urllib.request
+import argparse, asyncio, hashlib, html.parser, ipaddress, json, pathlib, re, socket, subprocess, urllib.error, urllib.parse, urllib.request, urllib.robotparser
 from datetime import datetime, timezone
 from typing import Any
 
 UA="PublicDataToolkit/1"
-SOURCES={"crawlee_site","scrapling_page","jobspy_jobs","searxng_search","tech_detect"}
+SOURCES={"crawlee_site","scrapling_page","jobspy_jobs","searxng_search","tech_detect","contact_extract","crawl4ai_page"}
 
 def clean(v:Any,limit:int=6000)->str:
     return " ".join(str(v or "").split())[:limit]
@@ -37,6 +37,100 @@ def ensure_public_url(value:str)->str:
         if not ip.is_global:
             raise ValueError("Only public network targets are allowed")
     return u.geturl()
+
+
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        safe=ensure_public_url(urllib.parse.urljoin(req.full_url,newurl))
+        return super().redirect_request(req,fp,code,msg,headers,safe)
+
+def public_opener():
+    return urllib.request.build_opener(SafeRedirect())
+
+def fetch_public_bytes(url:str,max_bytes:int=2_000_000,timeout:int=30):
+    target=ensure_public_url(url)
+    parsed=urllib.parse.urlparse(target)
+    robots=urllib.robotparser.RobotFileParser()
+    robots.set_url(f"{parsed.scheme}://{parsed.netloc}/robots.txt")
+    try: robots.read()
+    except Exception: pass
+    if not robots.can_fetch(UA,target): raise PermissionError("robots.txt disallows this URL")
+    req=urllib.request.Request(target,headers={"User-Agent":UA,"Accept":"text/html,application/xhtml+xml"})
+    with public_opener().open(req,timeout=timeout) as r:
+        final=ensure_public_url(r.geturl())
+        raw=r.read(max_bytes+1)
+        ctype=str(r.headers.get("content-type") or "")
+    if len(raw)>max_bytes: raise ValueError("Public page exceeds size limit")
+    if "html" not in ctype.lower() and "text" not in ctype.lower(): raise ValueError("Expected a public text/html page")
+    return final,raw,ctype
+
+class ContactParser(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__();self.mailto=[];self.tel=[];self.text=[]
+    def handle_starttag(self,tag,attrs):
+        if tag.lower()!="a": return
+        href=dict(attrs).get("href","")
+        if isinstance(href,str) and href.lower().startswith("mailto:"): self.mailto.append(href[7:].split("?",1)[0])
+        if isinstance(href,str) and href.lower().startswith("tel:"): self.tel.append(href[4:].split("?",1)[0])
+    def handle_data(self,data):
+        if data and data.strip(): self.text.append(data)
+
+def contact_extract(cfg):
+    doc=fixture(cfg)
+    if doc is not None:return from_fixture("contact_extract",cfg,doc)
+    urls=[ensure_public_url(x) for x in (cfg.get("urls") or [])]
+    if not urls:raise ValueError("urls is required")
+    max_urls=max(1,min(50,int(cfg.get("max_urls") or 10)))
+    email_re=re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63})(?![A-Z0-9._%+-])",re.I)
+    phone_re=re.compile(r"(?<!\w)(\+?[0-9][0-9().\-\s]{6,20}[0-9])(?!\w)")
+    records=[];failed=0
+    for url in urls[:max_urls]:
+        try:
+            final,raw,_=fetch_public_bytes(url)
+            text=raw.decode("utf-8","replace")
+            parser=ContactParser();parser.feed(text)
+            visible=" ".join(parser.text)
+            emails={clean(x,254).lower() for x in parser.mailto if clean(x,254)}
+            emails.update(clean(x,254).lower() for x in email_re.findall(visible))
+            phones={clean(x,80) for x in parser.tel if clean(x,80)}
+            phones.update(clean(x,80) for x in phone_re.findall(visible))
+            for email in sorted(emails):
+                records.append({"id":rid("contact","email",email,final),"text":f"Public email evidence: {email}.","observed_at":now(),"metadata":{"source":"public_page","kind":"email","value":email,"state":"DISCOVERED","evidence_url":final}})
+            for phone in sorted(phones):
+                records.append({"id":rid("contact","phone",phone,final),"text":f"Public phone evidence: {phone}.","observed_at":now(),"metadata":{"source":"public_page","kind":"phone","value":phone,"state":"DISCOVERED","evidence_url":final}})
+        except Exception:
+            failed+=1
+    return records,failed,{"requested":min(len(urls),max_urls),"state":"DISCOVERED","verification":"not_performed"}
+
+def safe_final_url(url:str):
+    target=ensure_public_url(url)
+    req=urllib.request.Request(target,headers={"User-Agent":UA,"Accept":"text/html","Range":"bytes=0-0"})
+    with public_opener().open(req,timeout=20) as r:
+        return ensure_public_url(r.geturl())
+
+async def crawl4ai_real(cfg):
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+    urls=[safe_final_url(x) for x in (cfg.get("urls") or [])]
+    if not urls:raise ValueError("urls is required")
+    max_urls=max(1,min(20,int(cfg.get("max_urls") or 5)))
+    browser=BrowserConfig(headless=True,text_mode=True,java_script_enabled=False,user_agent=UA,use_persistent_context=False)
+    run_cfg=CrawlerRunConfig(cache_mode=CacheMode.BYPASS,check_robots_txt=True,exclude_external_links=True,page_timeout=30000,word_count_threshold=5)
+    records=[];failed=0
+    async with AsyncWebCrawler(config=browser) as crawler:
+        for url in urls[:max_urls]:
+            try:
+                result=await crawler.arun(url=url,config=run_cfg)
+                if not result.success: failed+=1;continue
+                final=ensure_public_url(str(result.url or url))
+                markdown=clean(getattr(result,"markdown",""),8000)
+                records.append({"id":rid("crawl4ai",final),"text":markdown or final,"observed_at":now(),"metadata":{"source":"crawl4ai","url":final,"status_code":getattr(result,"status_code",None),"robots_txt":True,"javascript":False}})
+            except Exception:
+                failed+=1
+    return records,failed,{"requested":min(len(urls),max_urls),"robots_txt":True,"javascript":False,"mode":"static"}
+
+def crawl4ai_page(cfg):
+    doc=fixture(cfg)
+    return from_fixture("crawl4ai",cfg,doc) if doc is not None else asyncio.run(crawl4ai_real(cfg))
 
 def dedupe(records):
     seen=set();out=[];dupes=0
@@ -160,7 +254,7 @@ def tech_detect(cfg):
         records.append({"id":rid("tech",url),"text":f"Technology fingerprint for {url}: {', '.join(tech[:100])}.","observed_at":now(),"metadata":{"source":"wappalyzergo","url":url,"technologies":tech[:200]}})
     return records,0,{"requested":min(len(urls),50),"engine":"wappalyzergo"}
 
-HANDLERS={"crawlee_site":crawlee_site,"scrapling_page":scrapling_page,"jobspy_jobs":jobspy_jobs,"searxng_search":searxng_search,"tech_detect":tech_detect}
+HANDLERS={"crawlee_site":crawlee_site,"scrapling_page":scrapling_page,"jobspy_jobs":jobspy_jobs,"searxng_search":searxng_search,"tech_detect":tech_detect,"contact_extract":contact_extract,"crawl4ai_page":crawl4ai_page}
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--source",required=True,choices=sorted(SOURCES));ap.add_argument("--config",required=True);ap.add_argument("--out",default="out")
