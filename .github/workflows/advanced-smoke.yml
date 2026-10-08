@@ -21,7 +21,7 @@ jobs:
       - name: Install public worker dependencies
         run: pip install --disable-pip-version-check 'crawlee[beautifulsoup]' 'scrapling[fetchers]'
       - name: Prepare Go dependency
-        run: (cd techdetect && go mod download)
+        run: (cd techdetect && go mod tidy)
       - name: Crawlee robots-aware smoke
         run: |
           cat > crawl.json <<'JSON'
