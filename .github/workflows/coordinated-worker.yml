@@ -51,9 +51,9 @@ jobs:
           PY
           case "${{ steps.claim.outputs.task }}" in
             crawlee_site|scrapling_page|jobspy_jobs|searxng_search|tech_detect|contact_extract|crawl4ai_page|duckdb_batch)
-              python3 advanced_worker.py --source "${{ steps.claim.outputs.task }}" --config job.json --out out ;;
+              python3 advanced_worker.py --source "${{ steps.claim.outputs.task }}" --config job.json --out out > /dev/null ;;
             *)
-              python3 worker.py --source "${{ steps.claim.outputs.task }}" --config job.json --out out ;;
+              python3 worker.py --source "${{ steps.claim.outputs.task }}" --config job.json --out out > /dev/null ;;
           esac
       - name: Return result
         if: steps.claim.outputs.claimed == 'true' && always()
@@ -61,9 +61,3 @@ jobs:
           COORDINATOR_URL: ${{ secrets.COORDINATOR_URL }}
         run: |
           if [ -f out/receipt.json ]; then python3 coordinator_client.py complete --claim claim.json --result-dir out; fi
-      - uses: actions/upload-artifact@v4
-        if: steps.claim.outputs.claimed == 'true' && always()
-        with:
-          name: coordinated-public-data-output
-          path: out/
-          retention-days: 3
