@@ -1,0 +1,38 @@
+name: Technology detector verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tech-smoke.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+          cache: false
+      - name: Compile and verify Go module
+        run: |
+          cd techdetect
+          go mod tidy
+          go test ./...
+      - name: Verify plain public technology fingerprint
+        run: |
+          printf '%s\n' '{"urls":["https://example.com/"]}' > job.json
+          python3 advanced_worker.py --source tech_detect --config job.json --out out
+          python3 - <<'PY'
+          import json
+          data=json.load(open("out/receipt.json"))
+          assert data["status"]=="completed",data
+          assert data["output_count"]==1,data
+          print("tech detector live smoke passed; one bounded public target")
+          PY
