@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse,json,os,pathlib,urllib.parse,urllib.request
+import argparse,gzip,hashlib,json,os,pathlib,urllib.error,urllib.parse,urllib.request
 
 AUDIENCE="public-worker-coordinator"
 
@@ -52,19 +52,41 @@ def complete(claim_path:pathlib.Path,result_dir:pathlib.Path):
     for candidate in ("records","results","clusters"):
         if isinstance(result.get(candidate),list):
             items=result[candidate];field=candidate;break
-    ingested=0;truncated=0
-    if items is not None and claim.get("items_url"):
-        limit=min(len(items),5000);truncated=max(0,len(items)-limit)
-        for i in range(0,limit,100):
-            batch=items[i:min(i+100,limit)]
+    ingested=0;truncated=0;chunks=0
+    chunks_url=claim.get("chunks_url")
+    if items is not None and chunks_url:
+        if len(items)>100000:
+            raise RuntimeError("Archive supports at most 100000 normalized items per job; split the job")
+        for index,i in enumerate(range(0,len(items),100)):
+            batch=items[i:i+100]
+            body=json.dumps({"field":field,"offset":i,"items":batch},ensure_ascii=False,separators=(",",":")).encode("utf-8")
+            if len(body)>2_000_000: raise RuntimeError("Normalized item chunk too large; split records before dispatch")
+            packed=gzip.compress(body,compresslevel=6,mtime=0)
+            if len(packed)>500000: raise RuntimeError("Compressed item chunk too large; split records before dispatch")
+            digest=hashlib.sha256(packed).hexdigest()
+            url=str(chunks_url).rstrip("/")+"/"+str(index)
+            req=urllib.request.Request(url,data=packed,method="PUT",headers={
+                "Authorization":"Bearer "+oidc_token(),
+                "Content-Type":"application/gzip",
+                "X-Record-Kind":str(field),"X-Record-Count":str(len(batch)),
+                "X-Content-Sha256":digest,"User-Agent":"PublicWorkerCoordinator/1"
+            })
+            with urllib.request.urlopen(req,timeout=90) as response:
+                if response.status!=200:raise RuntimeError("Archive upload did not succeed")
+            ingested+=len(batch);chunks+=1
+        result={k:v for k,v in result.items() if k!=field}
+        result.update({"item_field":field,"items_archived":ingested,"archive_chunks":chunks})
+    elif items is not None and claim.get("items_url"):
+        if len(items)>5000:raise RuntimeError("Indexed item limit is 5000 without archive storage; refusing silent truncation")
+        for i in range(0,len(items),100):
+            batch=items[i:i+100]
             status,_=call(str(claim["items_url"]),{"field":field,"offset":i,"items":batch})
             if status not in (200,201):raise RuntimeError("Item ingest failed")
             ingested+=len(batch)
         result={k:v for k,v in result.items() if k!=field}
-        result.update({"item_field":field,"items_ingested":ingested,"items_not_ingested":truncated})
-    encoded=json.dumps(result,separators=(",",":")).encode()
-    if len(encoded)>100_000:
-        result={"summary":"Structured result exceeded inline callback limit.","inline_bytes":len(encoded),"items_ingested":ingested,"items_not_ingested":truncated}
+        result.update({"item_field":field,"items_ingested":ingested})
+    elif items:
+        raise RuntimeError("Coordinator has no normalized-item ingest endpoint")
     status,data=call(str(claim["callback_url"]),{"receipt":receipt,"result":result})
     if status!=200:raise RuntimeError("Completion callback failed")
     print(json.dumps({"completed":True,"job_id":data.get("job_id"),"receipt_id":data.get("receipt_id"),"items_ingested":ingested,"items_not_ingested":truncated}))
