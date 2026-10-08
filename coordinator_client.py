@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse,gzip,hashlib,json,os,pathlib,urllib.error,urllib.parse,urllib.request
+import argparse,gzip,hashlib,json,os,pathlib,sys,urllib.error,urllib.parse,urllib.request
 
 AUDIENCE="public-worker-coordinator"
+
+def public_task(payload):
+    manifest=json.loads((pathlib.Path(__file__).parent/"worker-manifest.json").read_text(encoding="utf-8"))
+    allowed={item["key"] for item in manifest["capabilities"]}
+    task=payload.get("source") or payload.get("task_type")
+    if not isinstance(task,str) or task not in allowed:
+        raise RuntimeError("Claimed job has no supported public task selector")
+    return task
 
 def oidc_token():
     url=os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL","").strip()
@@ -23,9 +31,9 @@ def call(url,body,timeout=45):
             content=r.read(2_000_000)
             return r.status,json.loads(content.decode()) if content else {}
     except urllib.error.HTTPError as e:
-        content=e.read(2000).decode("utf-8","replace")
         if e.code==204:return 204,{}
-        raise RuntimeError(f"Coordinator HTTP {e.code}: {content}") from e
+        # Response bodies and exception URLs can contain private diagnostics.
+        raise RuntimeError(f"Coordinator HTTP {int(e.code)}") from None
 
 def claim(out:pathlib.Path):
     url=os.environ.get("COORDINATOR_URL","").strip()
@@ -35,12 +43,17 @@ def claim(out:pathlib.Path):
         return
     print("configured=true")
     status,data=call(url,{})
-    if status==204 or not data.get("job"):
+    if status==204:
         print("claimed=false");return
-    out.write_text(json.dumps(data,ensure_ascii=False),encoding="utf-8")
+    if status!=200 or not isinstance(data.get("job"),dict):
+        raise RuntimeError("Coordinator returned an invalid claim")
     payload=data["job"].get("payload") or {}
-    task=str(payload.get("source") or payload.get("task_type") or "")
-    if not task: raise RuntimeError("Claimed job has no public task selector")
+    task=public_task(payload)
+    # Retain only the transport contract, never internal attribution fields.
+    projected={key:data[key] for key in ("contract_version","callback_url","items_url","chunks_url") if key in data}
+    projected["job"]={key:data["job"][key] for key in ("id","payload","expires_at") if key in data["job"]}
+    out.write_text(json.dumps(projected,ensure_ascii=False),encoding="utf-8")
+    out.chmod(0o600)
     print("claimed=true");print("task="+task)
 
 def complete(claim_path:pathlib.Path,result_dir:pathlib.Path):
@@ -91,11 +104,17 @@ def complete(claim_path:pathlib.Path,result_dir:pathlib.Path):
     if status!=200:raise RuntimeError("Completion callback failed")
     print(json.dumps({"completed":True,"job_id":data.get("job_id"),"receipt_id":data.get("receipt_id"),"items_ingested":ingested,"items_not_ingested":truncated}))
 
-def main():
+def main(argv=None):
     ap=argparse.ArgumentParser();sub=ap.add_subparsers(dest="cmd",required=True)
     c=sub.add_parser("claim");c.add_argument("--out",default="claim.json")
     d=sub.add_parser("complete");d.add_argument("--claim",default="claim.json");d.add_argument("--result-dir",default="out")
-    a=ap.parse_args()
-    if a.cmd=="claim":claim(pathlib.Path(a.out))
-    else:complete(pathlib.Path(a.claim),pathlib.Path(a.result_dir))
-if __name__=="__main__":main()
+    a=ap.parse_args(argv)
+    try:
+        if a.cmd=="claim":claim(pathlib.Path(a.out))
+        else:complete(pathlib.Path(a.claim),pathlib.Path(a.result_dir))
+    except Exception:
+        print("Coordinator operation failed; private diagnostics withheld.",file=sys.stderr)
+        return 1
+    return 0
+if __name__=="__main__":raise SystemExit(main())
+
