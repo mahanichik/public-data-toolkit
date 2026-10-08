@@ -3,6 +3,12 @@ on:
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - coordinator_client.py
+      - worker-manifest.json
+      - .github/workflows/coordinated-worker.yml
 permissions:
   contents: read
   id-token: write
@@ -12,7 +18,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,6 +29,18 @@ jobs:
         env:
           COORDINATOR_URL: ${{ secrets.COORDINATOR_URL }}
         run: python3 coordinator_client.py claim --out claim.json >> "$GITHUB_OUTPUT"
+      - name: Report bounded claim status
+        if: always()
+        env:
+          WORKER_CONFIGURED: ${{ steps.claim.outputs.configured }}
+          WORKER_CLAIMED: ${{ steps.claim.outputs.claimed }}
+        run: |
+          python3 - <<'PY'
+          import os
+          for field in ("CONFIGURED", "CLAIMED"):
+              value=os.environ.get("WORKER_"+field, "")
+              print(field.lower()+"="+(value if value in ("true", "false") else "unknown"))
+          PY
       - uses: actions/setup-go@v6
         if: steps.claim.outputs.claimed == 'true' && steps.claim.outputs.task == 'tech_detect'
         with:
