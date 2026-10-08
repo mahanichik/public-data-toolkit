@@ -38,7 +38,7 @@ jobs:
             jobspy_jobs) pip install --disable-pip-version-check python-jobspy==1.2.0 ;;
             crawl4ai_page) pip install --disable-pip-version-check crawl4ai==0.9.3 && crawl4ai-setup ;;
             duckdb_batch) pip install --disable-pip-version-check duckdb==1.5.6 ;;
-            tech_detect) (cd techdetect && go mod download) ;;
+            tech_detect) (cd techdetect && go mod tidy) ;;
           esac
       - name: Run claimed task
         if: steps.claim.outputs.claimed == 'true'
