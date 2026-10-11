@@ -1,0 +1,27 @@
+name: Generic official source health
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - source_health.py
+      - tests/test_source_health.py
+      - .github/workflows/source-health.yml
+permissions:
+  contents: read
+concurrency:
+  group: generic-source-health
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify bounded source and redacted receipt
+        run: python3 -m unittest discover -s tests -p test_source_health.py -v
+      - name: Read fixed generic public feed using existing toolkit reader
+        run: python3 source_health.py
