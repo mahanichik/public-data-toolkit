@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, hashlib, json, pathlib, subprocess, tempfile, time, urllib.error, urllib.parse, urllib.request
+import argparse, hashlib, html, json, pathlib, re, subprocess, tempfile, time, urllib.error, urllib.parse, urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,12 +16,17 @@ def rid(prefix:str,*parts:Any)->str:
 def now()->str:
     return datetime.now(timezone.utc).isoformat()
 
-def http_json(url:str,timeout:int=60,max_bytes:int=8_000_000):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        raise urllib.error.HTTPError(req.full_url,code,"Public profile redirect refused",headers,fp)
+
+def http_json(url:str,timeout:int=60,max_bytes:int=8_000_000,allow_redirects:bool=True):
     last=None
     for attempt in range(4):
         req=urllib.request.Request(url,headers={"User-Agent":UA,"Accept":"application/json"})
         try:
-            with urllib.request.urlopen(req,timeout=timeout) as r:
+            open_request=urllib.request.urlopen if allow_redirects else urllib.request.build_opener(NoRedirect()).open
+            with open_request(req,timeout=timeout) as r:
                 raw=r.read(max_bytes+1)
             if len(raw)>max_bytes:
                 raise RuntimeError("Response exceeded size limit")
@@ -202,7 +207,43 @@ def lever(cfg):
             if len(records)>=max_records:return records,filtered,{"sites":sites}
     return records,filtered,{"sites":sites}
 
-SOURCES={"overture_places":overture,"gdelt_events":gdelt,"overpass_places":overpass,"greenhouse_jobs":greenhouse,"lever_jobs":lever,"ashby_jobs":ashby}
+def ask_hn_requests(cfg):
+    """Fixed generic API profile. No workspace query, geography or contact list."""
+    if set(cfg)-{"profile","max_records"} or cfg.get("profile")!="ask_hn_service_requests_v1":
+        raise ValueError("Unreviewed public demand profile")
+    limit=cfg.get("max_records",40)
+    if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=40:
+        raise ValueError("Invalid public demand bound")
+    clock=datetime.now(timezone.utc);cutoff=int(clock.timestamp())-30*86400
+    records=[];rejected=0;inspected=0
+    for query in ("website agency","marketing agency","content help","business help"):
+        params=urllib.parse.urlencode({"query":query,"tags":"ask_hn","hitsPerPage":10,"numericFilters":"created_at_i>"+str(cutoff)})
+        doc=http_json("https://hn.algolia.com/api/v1/search_by_date?"+params,timeout=12,max_bytes=100000,allow_redirects=False)
+        hits=doc.get("hits") if isinstance(doc,dict) else None
+        if not isinstance(hits,list) or len(hits)>10 or any(not isinstance(h,dict) for h in hits):
+            raise ValueError("Invalid bounded public request page")
+        for hit in hits:
+            inspected+=1;object_id=str(hit.get("objectID") or "")
+            title=clean(html.unescape(re.sub(r"<[^>]*>"," ",str(hit.get("title") or ""))),1000)
+            body=clean(html.unescape(re.sub(r"<[^>]*>"," ",str(hit.get("story_text") or ""))),3000)
+            signal=title+" "+body;stamp=hit.get("created_at_i");tags=hit.get("_tags")
+            valid=(re.fullmatch(r"\d{1,20}",object_id) and isinstance(stamp,int) and not isinstance(stamp,bool)
+                and cutoff<=stamp<=clock.timestamp()+300 and isinstance(tags,list) and "ask_hn" in tags
+                and title and body and re.search(r"\b(business|company|startup|founder|agency|our site|our website)\b",signal,re.I)
+                and re.search(r"\b(looking|need|recommend|hire|seeking|help)\b",signal,re.I))
+            if not valid or re.search(r"\b(addiction|grief|diagnosis|eviction|personal debt|suicide)\b",signal,re.I):
+                rejected+=1;continue
+            redact=lambda s:re.sub(r"[\w.%+-]+@(?:[\w-]+\.)+[a-z]{2,}","[public contact omitted]",s,flags=re.I)
+            title=redact(title);body=redact(body)
+            records.append({"id":"ask_hn_"+object_id,"text":(title+" "+body)[:4000],
+                "observed_at":datetime.fromtimestamp(stamp,timezone.utc).isoformat(),
+                "metadata":{"source":"ask_hn","object_id":object_id,"url":"https://news.ycombinator.com/item?id="+object_id,
+                    "title":title,"request_text":body,"buyer_location":"unknown","contact_permission":"unknown"}})
+    unique,dupes=dedupe(records);overflow=max(0,len(unique)-limit)
+    return unique[:limit],rejected+overflow,{"profile":"ask_hn_service_requests_v1","pages":4,"records_inspected":inspected,
+        "duplicate_count":dupes,"overflow_count":overflow,"buyer_geography_verified":False,"contact_authorized":False}
+
+SOURCES={"overture_places":overture,"gdelt_events":gdelt,"overpass_places":overpass,"greenhouse_jobs":greenhouse,"lever_jobs":lever,"ashby_jobs":ashby,"ask_hn_requests":ask_hn_requests}
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--source",required=True,choices=sorted(SOURCES));ap.add_argument("--config",required=True);ap.add_argument("--out",default="out")
@@ -212,6 +253,8 @@ def main():
     except Exception as e:
         records=[];filtered=0;meta={};error=f"{type(e).__name__}: {e}"
     records,dupes=dedupe(records)
+    if args.source=="ask_hn_requests":
+        dupes+=int(meta.get("duplicate_count",0))
     out=pathlib.Path(args.out);out.mkdir(parents=True,exist_ok=True)
     status="failed" if error else "completed"
     receipt={"worker_key":"public_data_worker","activity_type":"public_collection","source_key":args.source,"compute_class":"github_public","status":status,"input_count":len(records)+filtered+dupes,"output_count":len(records),"rejected_count":filtered,"duplicate_count":dupes,"stale_count":0,"promoted_count":len(records),"reasons":{k:v for k,v in {"filtered":filtered,"duplicate":dupes}.items() if v},"metrics":meta,"summary":error or f"{args.source}: {len(records)} normalized records; {filtered} filtered; {dupes} duplicates.","started_at":started,"completed_at":now()}
@@ -221,3 +264,4 @@ def main():
     if error:raise SystemExit(1)
 
 if __name__=="__main__":main()
+

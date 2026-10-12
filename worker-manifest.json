@@ -73,6 +73,13 @@
       "key": "duckdb_batch",
       "kind": "transform",
       "output": "records+receipt"
+    },
+    {
+      "key": "ask_hn_requests",
+      "kind": "source",
+      "output": "records+receipt",
+      "profile": "ask_hn_service_requests_v1",
+      "customer_inputs": false
     }
   ],
   "security": {
